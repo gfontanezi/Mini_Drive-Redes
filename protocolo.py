@@ -10,6 +10,12 @@ DELIMITADOR = "|"
 TERMINADOR = "\n"
 TAMANHO_BLOCO = 4096  # Chunks de 4KB
 
+# Keep-alive: o cliente manda PING a cada INTERVALO_KEEPALIVE segundos.
+# Se o servidor ficar TIMEOUT_KEEPALIVE segundos sem receber nada do cliente
+# (ou seja, perdeu 3 PINGs seguidos), considera que o cliente caiu.
+INTERVALO_KEEPALIVE = 10
+TIMEOUT_KEEPALIVE = 3 * INTERVALO_KEEPALIVE
+
 
 def enviar_msg(sock, comando, *args):
     """

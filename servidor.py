@@ -9,7 +9,7 @@ import os
 import sys
 import socket
 import threading
-from protocolo import enviar_msg, receber_msg, receber_arquivo, enviar_arquivo
+from protocolo import enviar_msg, receber_msg, receber_arquivo, enviar_arquivo, TIMEOUT_KEEPALIVE
 
 HOST_PADRAO = "0.0.0.0"
 PORTA_PADRAO = 5000
@@ -30,7 +30,14 @@ def tratar_cliente(conn, addr):
 
     try:
         while True:
-            partes = receber_msg(conn)
+            try:
+                partes = receber_msg(conn)
+            except socket.timeout:
+                # Passou TIMEOUT_KEEPALIVE segundos sem chegar nenhum byte:
+                # o cliente parou de mandar PING, entao consideramos que caiu.
+                print(f"[KEEPALIVE] [{nome_thread}] '{usuario}' ficou {TIMEOUT_KEEPALIVE}s sem enviar nada. Encerrando conexao.")
+                break
+
             if partes is None:
                 print(f"[-] [{nome_thread}] Conexao encerrada pelo cliente {ip_porta}")
                 break
@@ -55,6 +62,9 @@ def tratar_cliente(conn, addr):
                     os.makedirs(caminho_usuario, exist_ok=True)
 
                     estado = "AUTENTICADO"
+                    # A partir do login, o recv() passa a ter prazo: se o cliente
+                    # ficar TIMEOUT_KEEPALIVE segundos mudo, levanta socket.timeout.
+                    conn.settimeout(TIMEOUT_KEEPALIVE)
                     print(f"[AUTH] [{nome_thread}] Usuario '{usuario}' autenticado! Pasta: '{caminho_usuario}'")
                     enviar_msg(conn, "WELCOME", "OK", f"Bem-vindo {usuario}")
 
@@ -69,7 +79,15 @@ def tratar_cliente(conn, addr):
             elif estado == "AUTENTICADO":
                 pasta_usuario = os.path.join(PASTA_ARMAZENAMENTO, usuario)
 
-                if comando == "DISCONNECT":
+                # -------------------------------------------------------------
+                # KEEP-ALIVE: responde PING|<seq> com PONG|<seq>
+                # -------------------------------------------------------------
+                if comando == "PING":
+                    seq = partes[1] if len(partes) > 1 else ""
+                    print(f"[KEEPALIVE] [{nome_thread}] PING #{seq} de '{usuario}' -> PONG")
+                    enviar_msg(conn, "PONG", seq)
+
+                elif comando == "DISCONNECT":
                     print(f"[-] [{nome_thread}] Desconexao graciosa do usuario '{usuario}' ({ip_porta})")
                     enviar_msg(conn, "STATUS", "OK", "Ate logo")
                     estado = "FINALIZADO"
@@ -103,6 +121,8 @@ def tratar_cliente(conn, addr):
                     sucesso = receber_arquivo(conn, tamanho_bytes, caminho_destino)
                     if sucesso:
                         print(f"[UPLOAD] [{nome_thread}] Arquivo '{nome_arquivo}' ({tamanho_bytes} bytes) salvo com sucesso!")
+                        # Confirma ao cliente que recebeu todos os bytes (ACK do upload)
+                        enviar_msg(conn, "STATUS", "OK", "recebido")
                     else:
                         print(f"[!] [{nome_thread}] Falha na transmissao de '{nome_arquivo}'. Descartando arquivo parcial.")
                         if os.path.exists(caminho_destino):
