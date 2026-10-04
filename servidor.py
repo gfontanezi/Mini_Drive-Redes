@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-servidor.py - Servidor TCP Multithread para a Mini Nuvem Pessoal.
-Disciplina: Redes de Computadores
-Protocolo: NSP (Nuvem Storage Protocol)
-"""
-
 import os
 import sys
 import socket
@@ -17,10 +10,9 @@ PASTA_ARMAZENAMENTO = "armazenamento"
 
 
 def tratar_cliente(conn, addr):
-    """
-    Funcao executada em uma thread separada para cada cliente conectado.
-    Gerencia a conexao, a Maquina de Estados Finita (FSM) e todas as operacoes.
-    """
+  
+    #  Funcao executada em uma thread separada para cada cliente conectado. Gerencia todas as operacoes.
+  
     ip_porta = f"{addr[0]}:{addr[1]}"
     nome_thread = threading.current_thread().name
     print(f"[+] [{nome_thread}] Conexao estabelecida de {ip_porta}")
@@ -33,8 +25,7 @@ def tratar_cliente(conn, addr):
             try:
                 partes = receber_msg(conn)
             except socket.timeout:
-                # Passou TIMEOUT_KEEPALIVE segundos sem chegar nenhum byte:
-                # o cliente parou de mandar PING, entao consideramos que caiu.
+                # Se passou x segundos sem chegar nenhum byte o cliente parou de mandar PING, entao considerar que caiu.
                 print(f"[KEEPALIVE] [{nome_thread}] '{usuario}' ficou {TIMEOUT_KEEPALIVE}s sem enviar nada. Encerrando conexao.")
                 break
 
@@ -47,14 +38,14 @@ def tratar_cliente(conn, addr):
 
             comando = partes[0]
 
-            # -----------------------------------------------------------------
+            # ----------------------------
             # ESTADO 1: NAO_AUTENTICADO
-            # -----------------------------------------------------------------
+            # ----------------------------
             if estado == "NAO_AUTENTICADO":
                 if comando == "CONNECT":
                     if len(partes) < 2 or not partes[1].strip():
                         print(f"[!] [{nome_thread}] Tentativa de CONNECT sem usuario de {ip_porta}")
-                        enviar_msg(conn, "WELCOME", "ERRO", "Nome de usuario invalido ou vazio")
+                        enviar_msg(conn, "WELCOME", "ERRO", "Nome de usuario invalido")
                         break
 
                     usuario = partes[1].strip()
@@ -62,8 +53,7 @@ def tratar_cliente(conn, addr):
                     os.makedirs(caminho_usuario, exist_ok=True)
 
                     estado = "AUTENTICADO"
-                    # A partir do login, o recv() passa a ter prazo: se o cliente
-                    # ficar TIMEOUT_KEEPALIVE segundos mudo, levanta socket.timeout.
+                    #  Se o cliente passar o tempo definido sem mandar nenhuma mensagem, levanta o socket.timeout.
                     conn.settimeout(TIMEOUT_KEEPALIVE)
                     print(f"[AUTH] [{nome_thread}] Usuario '{usuario}' autenticado! Pasta: '{caminho_usuario}'")
                     enviar_msg(conn, "WELCOME", "OK", f"Bem-vindo {usuario}")
@@ -73,29 +63,28 @@ def tratar_cliente(conn, addr):
                     enviar_msg(conn, "STATUS", "ERRO", "Autenticacao necessaria")
                     break
 
-            # -----------------------------------------------------------------
+            # -----------------------
             # ESTADO 2: AUTENTICADO
-            # -----------------------------------------------------------------
+            # ------------------------
             elif estado == "AUTENTICADO":
                 pasta_usuario = os.path.join(PASTA_ARMAZENAMENTO, usuario)
 
-                # -------------------------------------------------------------
                 # KEEP-ALIVE: responde PING|<seq> com PONG|<seq>
-                # -------------------------------------------------------------
                 if comando == "PING":
-                    seq = partes[1] if len(partes) > 1 else ""
+                    if len(partes) > 1:
+                        seq = partes[1]
+                    else:
+                        seq = ""
                     print(f"[KEEPALIVE] [{nome_thread}] PING #{seq} de '{usuario}' -> PONG")
                     enviar_msg(conn, "PONG", seq)
 
                 elif comando == "DISCONNECT":
-                    print(f"[-] [{nome_thread}] Desconexao graciosa do usuario '{usuario}' ({ip_porta})")
+                    print(f"[-] [{nome_thread}] Desconexao do usuario '{usuario}' ({ip_porta})")
                     enviar_msg(conn, "STATUS", "OK", "Ate logo")
                     estado = "FINALIZADO"
                     break
 
-                # -------------------------------------------------------------
-                # OPERACAO: UPLOAD
-                # -------------------------------------------------------------
+                # UPLOAD
                 elif comando == "UPLOAD_REQ":
                     if len(partes) < 3:
                         enviar_msg(conn, "STATUS", "ERRO", "Parametros insuficientes para UPLOAD_REQ")
@@ -121,10 +110,10 @@ def tratar_cliente(conn, addr):
                     sucesso = receber_arquivo(conn, tamanho_bytes, caminho_destino)
                     if sucesso:
                         print(f"[UPLOAD] [{nome_thread}] Arquivo '{nome_arquivo}' ({tamanho_bytes} bytes) salvo com sucesso!")
-                        # Confirma ao cliente que recebeu todos os bytes (ACK do upload)
+                        # Confirma ao cliente que recebeu todos os bytes.
                         enviar_msg(conn, "STATUS", "OK", "recebido")
                     else:
-                        print(f"[!] [{nome_thread}] Falha na transmissao de '{nome_arquivo}'. Descartando arquivo parcial.")
+                        print(f"[!] [{nome_thread}] Falha na transmissao de '{nome_arquivo}'. Descartando arquivo.")
                         if os.path.exists(caminho_destino):
                             try:
                                 os.remove(caminho_destino)
@@ -132,9 +121,7 @@ def tratar_cliente(conn, addr):
                                 pass
                         break
 
-                # -------------------------------------------------------------
-                # OPERACAO: LISTAGEM REMOTA
-                # -------------------------------------------------------------
+                # LISTAGEM DE ARQUIVOS
                 elif comando == "LIST_REQ":
                     print(f"[*] [{nome_thread}] Listando arquivos do usuario '{usuario}'...")
                     if not os.path.exists(pasta_usuario):
@@ -154,9 +141,7 @@ def tratar_cliente(conn, addr):
                     # Formato: LIST_RESP|<quantidade>|<nome1:tam1;nome2:tam2;...>
                     enviar_msg(conn, "LIST_RESP", quantidade, dados_formatados)
 
-                # -------------------------------------------------------------
-                # OPERACAO: DOWNLOAD
-                # -------------------------------------------------------------
+                # DOWNLOAD
                 elif comando == "DOWNLOAD_REQ":
                     if len(partes) < 2 or not partes[1].strip():
                         enviar_msg(conn, "STATUS", "ERRO", "Nome do arquivo nao especificado")
@@ -173,10 +158,10 @@ def tratar_cliente(conn, addr):
                     tamanho_bytes = os.path.getsize(caminho_arquivo)
                     print(f"[*] [{nome_thread}] Autorizando download de '{nome_arquivo}' ({tamanho_bytes} bytes)...")
                     
-                    # Avisa o cliente que o arquivo existe e seu tamanho exato
+                    # Avisa o cliente que o arquivo existe e seu tamanho.
                     enviar_msg(conn, "STATUS", "OK", tamanho_bytes)
 
-                    # Transmite os bytes do arquivo em blocos de 4KB
+                    # Transmite os bytes do arquivo em blocos de 4KB.
                     try:
                         enviar_arquivo(conn, caminho_arquivo)
                         print(f"[DOWNLOAD] [{nome_thread}] Arquivo '{nome_arquivo}' transmitido com sucesso para '{usuario}'!")
@@ -196,9 +181,8 @@ def tratar_cliente(conn, addr):
 
 
 def iniciar_servidor(host=HOST_PADRAO, porta=PORTA_PADRAO):
-    """
-    Inicializa o socket TCP do servidor e o loop de aceitacao com Threads.
-    """
+ 
+    # Inicializa o socket TCP do servidor e o loop de aceitacao com Threads.
     os.makedirs(PASTA_ARMAZENAMENTO, exist_ok=True)
 
     servidor_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -208,10 +192,10 @@ def iniciar_servidor(host=HOST_PADRAO, porta=PORTA_PADRAO):
         servidor_sock.bind((host, porta))
         servidor_sock.listen(10)
         print("=" * 60)
-        print("   MINI NUVEM PESSOAL - SERVIDOR TCP INICIADO")
-        print(f"   Escutando em: {host}:{porta}")
-        print(f"   Pasta de armazenamento: ./{PASTA_ARMAZENAMENTO}/")
-        print("   Pressione Ctrl+C para encerrar o servidor")
+        print("MINI NUVEM PESSOAL - SERVIDOR TCP INICIADO")
+        print(f"Escutando em: {host}:{porta}")
+        print(f"Pasta de armazenamento: ./{PASTA_ARMAZENAMENTO}/")
+        print("Pressione Ctrl+C para encerrar o servidor")
         print("=" * 60)
 
         contador_cliente = 1
@@ -227,14 +211,17 @@ def iniciar_servidor(host=HOST_PADRAO, porta=PORTA_PADRAO):
             thread.start()
 
     except KeyboardInterrupt:
-        print("\n[*] Encerrando o servidor a pedido do operador...")
+        print("\n[*] Encerrando o servidor...")
     except Exception as e:
-        print(f"[ERRO FATAL] Falha no servidor: {e}")
+        print(f"[ERRO] Falha no servidor: {e}")
     finally:
         servidor_sock.close()
         print("[*] Servidor finalizado.")
 
 
 if __name__ == "__main__":
-    porta = int(sys.argv[1]) if len(sys.argv) > 1 else PORTA_PADRAO
+    if len(sys.argv) > 1:
+        porta = int(sys.argv[1])
+    else:
+        porta = PORTA_PADRAO
     iniciar_servidor(porta=porta)

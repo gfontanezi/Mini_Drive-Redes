@@ -1,41 +1,35 @@
-# -*- coding: utf-8 -*-
-"""
-protocolo.py - Modulo compartilhado para o protocolo NSP (Nuvem Storage Protocol).
-Centraliza o empacotamento, envio e recepcao de mensagens e streaming binario.
-"""
+# Protocolo que centraliza o empacotamento, envio e recepcao de mensagens.
 
 import os
 
 DELIMITADOR = "|"
 TERMINADOR = "\n"
-TAMANHO_BLOCO = 4096  # Chunks de 4KB
+TAMANHO_BLOCO = 4096  
 
 # Keep-alive: o cliente manda PING a cada INTERVALO_KEEPALIVE segundos.
-# Se o servidor ficar TIMEOUT_KEEPALIVE segundos sem receber nada do cliente
-# (ou seja, perdeu 3 PINGs seguidos), considera que o cliente caiu.
 INTERVALO_KEEPALIVE = 10
 TIMEOUT_KEEPALIVE = 3 * INTERVALO_KEEPALIVE
 
 
 def enviar_msg(sock, comando, *args):
-    """
-    Empacota e envia uma mensagem de controle pelo socket TCP.
-    Formato: COMANDO|arg1|arg2|...\n
-    """
-    partes = [str(comando)] + [str(a) for a in args]
+
+    # Empacota e envia uma mensagem de controle pelo socket TCP.
+    # Formato: COMANDO|arg1|arg2|...\n
+    
+    partes = [str(comando)]
+    for a in args:
+        partes.append(str(a))
     mensagem = DELIMITADOR.join(partes) + TERMINADOR
     sock.sendall(mensagem.encode("utf-8"))
 
 
 def receber_msg(sock):
-    """
-    Le bytes do socket um a um ate encontrar o terminador '\\n'.
-    Isso garante o framing preciso do protocolo TCP sem ler bytes a mais
-    que possam pertencer ao stream binario de arquivos.
     
-    Retorna uma lista com as partes da mensagem [COMANDO, arg1, arg2, ...]
-    ou None se a conexao for encerrada.
-    """
+
+    # Le bytes do socket um a um ate encontrar o terminador '\n'. 
+    # Isso garante que não leia bytes a mais que possam pertencer ao stream arquivos.
+    
+    # Retorna uma lista com as partes da mensagem [COMANDO, arg1, arg2, ...]
     buffer = bytearray()
     while True:
         try:
@@ -56,10 +50,9 @@ def receber_msg(sock):
 
 
 def enviar_arquivo(sock, caminho_arquivo, callback_progresso=None):
-    """
-    Transmite um arquivo local pelo socket em blocos de 4KB.
-    Garante que arquivos grandes nao saturem a memoria RAM.
-    """
+
+    # Transmite um arquivo local pelo socket em blocos de 4KB.
+  
     total_bytes = os.path.getsize(caminho_arquivo)
     bytes_enviados = 0
 
@@ -75,10 +68,10 @@ def enviar_arquivo(sock, caminho_arquivo, callback_progresso=None):
 
 
 def receber_arquivo(sock, total_bytes, caminho_destino, callback_progresso=None):
-    """
-    Le exatamente total_bytes do socket em blocos de 4KB e grava no disco.
-    Se a conexao cair antes de ler todos os bytes, retorna False.
-    """
+   
+    # Le exatamente o total de bytes do socket em blocos de 4KB e grava no disco.
+    # Se a conexao cair antes de ler todos os bytes, retorna False.
+
     restante = total_bytes
     bytes_recebidos = 0
 
@@ -88,7 +81,7 @@ def receber_arquivo(sock, total_bytes, caminho_destino, callback_progresso=None)
                 limite = min(TAMANHO_BLOCO, restante)
                 bloco = sock.recv(limite)
                 if not bloco:
-                    # Conexao caiu antes de completar a transmissao
+                    # Conexao caiu antes de completar a transmissao.
                     return False
                 f.write(bloco)
                 tamanho_lido = len(bloco)

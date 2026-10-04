@@ -1,17 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-cliente.py - Cliente CLI para a Mini Nuvem Pessoal.
-Disciplina: Redes de Computadores
-Protocolo: NSP (Nuvem Storage Protocol)
-"""
-
 import os
 import sys
 import time
 import socket
 import threading
-from protocolo import (enviar_msg, receber_msg, enviar_arquivo, receber_arquivo,
-                       INTERVALO_KEEPALIVE, TIMEOUT_KEEPALIVE)
+from protocolo import (enviar_msg, receber_msg, enviar_arquivo, receber_arquivo, INTERVALO_KEEPALIVE, TIMEOUT_KEEPALIVE)
 
 HOST_PADRAO = "127.0.0.1"
 PORTA_PADRAO = 5000
@@ -19,21 +11,13 @@ PASTA_DOWNLOADS = "downloads"
 
 
 class Sessao:
-    """
-    Guarda o socket da sessao e roda a thread de keep-alive.
-
-    O menu fica parado no input() esperando o usuario, entao quem manda o PING
-    e uma segunda thread. Como as duas threads usam o MESMO socket, existe uma
-    trava (Lock): cada operacao (pedido + resposta + bytes do arquivo) e feita
-    inteira com a trava na mao, para o PING nunca entrar no meio de outra
-    mensagem (por exemplo, no meio dos bytes de um upload).
-    """
+    # Guarda o socket da sessao e roda a thread de keep-alive.
 
     def __init__(self, sock):
         self.sock = sock
         self.trava = threading.Lock()
         self.ativa = True
-        self.seq = 0               # numero de sequencia do PING
+        self.seq = 0
         self.ultimo_rtt_ms = None  # tempo PING -> PONG da ultima vez
 
     def iniciar_keepalive(self):
@@ -43,14 +27,14 @@ class Sessao:
         while self.ativa:
             time.sleep(INTERVALO_KEEPALIVE)
             with self.trava:
-                if not self.ativa:   # usuario saiu enquanto esperavamos
+                if not self.ativa:
                     break
                 self.seq += 1
                 try:
                     inicio = time.time()
                     enviar_msg(self.sock, "PING", self.seq)
                     resposta = receber_msg(self.sock)
-                except OSError:      # inclui socket.timeout
+                except OSError:
                     resposta = None
 
             if resposta and resposta[0] == "PONG" and resposta[1] == str(self.seq):
@@ -62,20 +46,23 @@ class Sessao:
 
 
 def formatar_tamanho(tamanho_bytes):
-    """
-    Converte bytes para formato legivel (B, KB, MB, GB).
-    """
+
+    # Converte bytes para formato legivel (B, KB, MB, GB).
+    
     for unidade in ["B", "KB", "MB", "GB"]:
         if tamanho_bytes < 1024.0:
-            return f"{tamanho_bytes:.1f} {unidade}" if unidade != "B" else f"{tamanho_bytes} B"
+            if unidade != "B":
+                return f"{tamanho_bytes:.1f} {unidade}"
+            else:
+                return f"{tamanho_bytes} B"
         tamanho_bytes /= 1024.0
     return f"{tamanho_bytes:.1f} TB"
 
 
 def conectar_servidor(host, porta):
-    """
-    Cria o socket TCP e conecta ao servidor.
-    """
+    
+    # Cria o socket TCP e conecta ao servidor.
+    
     print(f"[*] Conectando ao servidor em {host}:{porta}...")
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -88,9 +75,9 @@ def conectar_servidor(host, porta):
 
 
 def realizar_login(sock):
-    """
-    Solicita o nome de usuario e envia a mensagem CONNECT.
-    """
+ 
+    # Solicita o nome de usuario e envia a mensagem CONNECT.
+
     while True:
         try:
             usuario = input("Digite seu nome de usuario para login: ").strip()
@@ -114,8 +101,14 @@ def realizar_login(sock):
         return None
 
     comando = resposta[0]
-    status = resposta[1] if len(resposta) > 1 else ""
-    mensagem = resposta[2] if len(resposta) > 2 else ""
+    if len(resposta) > 1:
+        status = resposta[1]
+    else:
+        status = ""
+    if len(resposta) > 2:
+        mensagem = resposta[2]
+    else:
+        mensagem = ""
 
     if comando == "WELCOME" and status == "OK":
         print(f"[+] Login aceito! Mensagem do servidor: {mensagem}")
@@ -126,9 +119,9 @@ def realizar_login(sock):
 
 
 def executar_upload(sessao):
-    """
-    Solicita o caminho de um arquivo local e realiza o upload para o servidor.
-    """
+
+    # Solicita o caminho de um arquivo local e realiza o upload para o servidor.
+
     try:
         caminho_bruto = input("Digite o caminho do arquivo para enviar: ").strip()
     except (KeyboardInterrupt, EOFError):
@@ -157,10 +150,10 @@ def executar_upload(sessao):
 
 
 def executar_upload_rede(sock, caminho, nome_arquivo, tamanho_bytes):
-    """
-    Parte de rede do upload: UPLOAD_REQ -> STATUS|OK|pronto -> bytes -> STATUS|OK|recebido.
-    Deve ser chamada com a trava da sessao na mao.
-    """
+  
+    # Parte de rede do upload: UPLOAD_REQ -> STATUS|OK|pronto -> bytes -> STATUS|OK|recebido.
+  
+   
     enviar_msg(sock, "UPLOAD_REQ", nome_arquivo, tamanho_bytes)
     resposta = receber_msg(sock)
 
@@ -192,14 +185,17 @@ def executar_upload_rede(sock, caminho, nome_arquivo, tamanho_bytes):
         else:
             print("\n[ERRO] O servidor nao confirmou o recebimento do arquivo.")
     else:
-        motivo = resposta[2] if len(resposta) > 2 else "Recusado pelo servidor"
+        if len(resposta) > 2:
+            motivo = resposta[2]
+        else:
+            motivo = "Recusado pelo servidor"
         print(f"[ERRO] Servidor recusou upload: {motivo}")
 
 
 def executar_listagem(sessao):
-    """
-    Envia LIST_REQ e exibe a tabela de arquivos remotos salvos na nuvem.
-    """
+
+    # Envia LIST_REQ e exibe a tabela de arquivos remotos salvos na nuvem.
+
     print("[*] Consultando arquivos na nuvem...")
     with sessao.trava:
         enviar_msg(sessao.sock, "LIST_REQ")
@@ -214,24 +210,34 @@ def executar_listagem(sessao):
     except (ValueError, IndexError):
         total = 0
 
-    dados = resposta[2] if len(resposta) > 2 else ""
+    if len(resposta) > 2:
+        dados = resposta[2]
+    else:
+        dados = ""
 
     print("\n" + "-" * 55)
     print(f"{'NOME DO ARQUIVO':<35} | {'TAMANHO':<15}")
     print("-" * 55)
 
     if total == 0 or not dados:
-        print("   (Nenhum arquivo armazenado na sua nuvem ainda)")
+        print("(Nenhum arquivo armazenado na sua nuvem ainda)")
         print("-" * 55)
         return []
 
-    itens = [item for item in dados.split(";") if item.strip()]
+    itens = []
+    for item in dados.split(";"):
+        if item.strip():
+            itens.append(item)
+
     nomes_arquivos = []
 
     for item in itens:
         partes = item.split(":")
         nome = partes[0]
-        tam = int(partes[1]) if len(partes) > 1 and partes[1].isdigit() else 0
+        if len(partes) > 1 and partes[1].isdigit():
+            tam = int(partes[1])
+        else:
+            tam = 0
         nomes_arquivos.append(nome)
         print(f"{nome:<35} | {formatar_tamanho(tam):<15}")
 
@@ -241,9 +247,8 @@ def executar_listagem(sessao):
 
 
 def executar_download(sessao):
-    """
-    Solicita o download de um arquivo remoto e grava na pasta local 'downloads/'.
-    """
+    # Solicita o download de um arquivo remoto e grava na pasta local 'downloads/'.
+
     try:
         nome_arquivo = input("Digite o nome do arquivo que deseja baixar: ").strip().strip("\"'")
     except (KeyboardInterrupt, EOFError):
@@ -260,10 +265,8 @@ def executar_download(sessao):
 
 
 def executar_download_rede(sock, nome_arquivo):
-    """
-    Parte de rede do download: DOWNLOAD_REQ -> STATUS|OK|<tam> -> bytes.
-    Deve ser chamada com a trava da sessao na mao.
-    """
+    # Parte de rede do download: DOWNLOAD_REQ -> STATUS|OK|<tam> -> bytes.
+
     enviar_msg(sock, "DOWNLOAD_REQ", nome_arquivo)
     resposta = receber_msg(sock)
 
@@ -294,17 +297,20 @@ def executar_download_rede(sock, nome_arquivo):
         else:
             print(f"\n[ERRO] Queda de conexao durante recepcao de '{nome_arquivo}'.")
     else:
-        motivo = resposta[2] if len(resposta) > 2 else "Arquivo nao encontrado"
+        if len(resposta) > 2:
+            motivo = resposta[2]
+        else:
+            motivo = "Arquivo nao encontrado"
         print(f"[ERRO] Nao foi possivel baixar o arquivo: {motivo}")
 
 
 def menu_interativo(sessao, usuario):
-    """
-    Menu interativo completo do cliente da Nuvem Pessoal.
-    """
+
+    # Menu interativo completo do cliente da Nuvem Pessoal.
+ 
     while sessao.ativa:
         print("\n" + "=" * 45)
-        print(f"   MINI NUVEM PESSOAL - [{usuario}]")
+        print(f"MINI NUVEM PESSOAL - [{usuario}]")
         print("=" * 45)
         print("1. Enviar arquivo (Upload)")
         print("2. Listar meus arquivos (List)")
@@ -319,7 +325,7 @@ def menu_interativo(sessao, usuario):
             print("\n[*] Interrupcao detectada. Encerrando...")
             opcao = "4"
 
-        if not sessao.ativa:  # a thread de keep-alive detectou a queda
+        if not sessao.ativa:
             break
 
         try:
@@ -330,17 +336,23 @@ def menu_interativo(sessao, usuario):
             elif opcao == "3":
                 executar_download(sessao)
             elif opcao == "4" or opcao.lower() in ("sair", "exit", "quit"):
-                print("[*] Solicitando encerramento gracioso (DISCONNECT)...")
+                print("[*] Solicitando encerramento (DISCONNECT)...")
                 sessao.ativa = False  # avisa a thread de keep-alive para parar
                 with sessao.trava:
                     enviar_msg(sessao.sock, "DISCONNECT")
                     resposta = receber_msg(sessao.sock)
                 if resposta and resposta[0] == "STATUS":
-                    msg_servidor = resposta[2] if len(resposta) > 2 else ""
+                    if len(resposta) > 2:
+                        msg_servidor = resposta[2]
+                    else:
+                        msg_servidor = ""
                     print(f"[+] Servidor confirmou: {msg_servidor}")
                 print("[*] Sessao finalizada com sucesso. Ate logo!")
             elif opcao == "5":
-                rtt = f"{sessao.ultimo_rtt_ms:.2f} ms" if sessao.ultimo_rtt_ms is not None else "(nenhum PING ainda)"
+                if sessao.ultimo_rtt_ms is not None:
+                    rtt = f"{sessao.ultimo_rtt_ms:.2f} ms"
+                else:
+                    rtt = "(nenhum PING ainda)"
                 print(f"[*] PING a cada {INTERVALO_KEEPALIVE}s | PINGs enviados: {sessao.seq} | ultimo RTT: {rtt}")
             else:
                 print("[!] Opcao invalida. Digite um numero de 1 a 5.")
@@ -350,8 +362,14 @@ def menu_interativo(sessao, usuario):
 
 
 def main():
-    host = sys.argv[1] if len(sys.argv) > 1 else HOST_PADRAO
-    porta = int(sys.argv[2]) if len(sys.argv) > 2 else PORTA_PADRAO
+    if len(sys.argv) > 1:
+        host = sys.argv[1]
+    else:
+        host = HOST_PADRAO
+    if len(sys.argv) > 2:
+        porta = int(sys.argv[2])
+    else:
+        porta = PORTA_PADRAO
 
     sock = conectar_servidor(host, porta)
     if not sock:
@@ -360,8 +378,7 @@ def main():
     try:
         usuario = realizar_login(sock)
         if usuario:
-            # Espera por resposta do servidor tambem tem prazo: se ele sumir,
-            # o cliente percebe em vez de ficar travado no recv() para sempre.
+            # Espera por resposta do servidor tambem tem um prazo
             sock.settimeout(TIMEOUT_KEEPALIVE)
             sessao = Sessao(sock)
             sessao.iniciar_keepalive()
